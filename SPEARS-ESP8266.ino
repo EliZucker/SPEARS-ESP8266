@@ -2,14 +2,27 @@
 #include <WiFiClient.h>
 #include <ESP8266WebServer.h>
 #include <ESP8266mDNS.h>
+#include <WakeOnLan.h>
+#include <WiFiUDP.h>
 #include <FS.h>
+#include <WiFiClient.h>
+
+const String sensorOutputFileName = "sensorlog.txt";
 
 const char WiFiName[] = "SPEARS";
 const char WiFiPass[] = "SPEARSPEARS";
-const String sensorOutputFileName = "test.txt";
+const char GoProName[] = "GoProSPEARS";
+const char GoProPass[] = "swim4693";
+byte goProMac[] = {0xF6, 0xDD, 0x9E, 0x90, 0xF7, 0xD5};
+//static wireless configuration
+//I hope this helps GoPro wifi inconsistency
+IPAddress ip(10,5,5,100);
+IPAddress gateway(10,5,5,9);
+IPAddress subnet(255,255,255,0);
 
-//TO BE REPLACED
-const int led = 14;
+String webLog = "";
+
+bool loggingSensors = false;
 
 ESP8266WebServer server(80); 
 
@@ -18,31 +31,44 @@ void setup() {
   //open serial connection at 115200 baud
   Serial.begin(115200); 
 
-  //TO BE REPLACED
-  //debugging led initialization
-  pinMode(led, OUTPUT);
+  //enter AP + Station mode
+  WiFi.mode(WIFI_AP_STA);
 
-  //create AP and print info
+  //connect GoPro
+  WiFi.begin(GoProName, GoProPass);
+  WiFi.config(ip, gateway, subnet);
+  
+  int waitTime = 0;
+  while ((WiFi.status() != WL_CONNECTED) && (waitTime < 10))
+  {
+    delay(500);
+    waitTime++;
+    Serial.print(".");
+  }
+  WiFi.setAutoConnect(false);
+  WiFi.setAutoReconnect(false);
+
+  //output connection information
+  webLog = webLog + ((WiFi.status() == WL_CONNECTED) ? "Connected to GoPro! <br />": "GoPro connection failed... Turn on GoPro then restart<br />");
+  Serial.println();
+  Serial.print("gopro IP address: ");
+  Serial.println(WiFi.localIP());
   Serial.println(WiFi.softAP(WiFiName, WiFiPass)? "\nNetwork Setup Sucessful" : "\nNetwork Setup Failed");
   Serial.print("IP address: ");
   Serial.println(WiFi.softAPIP());
 
-  //configure mDNA (not required, but convenient)
-  //allows us to connect at spears.local
-  if (MDNS.begin("spears")) {              
-    Serial.println("mDNS responder started");
-  } else {
-    Serial.println("Error setting up MDNS responder!");
-  }
-
   //initialize the file system
-  SPIFFS.begin();   
+  SPIFFS.begin();
+  //SPIFFS.format();
   printFiles();
 
   //server configuration
   server.on(("/"+ sensorOutputFileName).c_str (), handleFileRead);
   server.on("/", handleRoot);
-  server.on("/start", HTTP_POST, startLogging);
+  server.on("/fullsensorlog", HTTP_POST, startFullSensorLog);
+  server.on("/restart", HTTP_POST, restart);
+  server.on("/powerongopro", HTTP_POST, powerOnGoPro);
+  server.on("/stoplogging", HTTP_POST, stopLogging);
   server.onNotFound([](){
     server.send(404, "text/plain", "404: Not found");
   });
@@ -53,6 +79,16 @@ void setup() {
 //this method is called repeatedly during operation
 void loop() {
   server.handleClient();
+
+  //write sensor data to file if enabled
+  if(loggingSensors) {
+    File sensorFile = SPIFFS.open(("/"+sensorOutputFileName), "a");
+    sensorFile.print("[");
+    sensorFile.print(millis());
+    sensorFile.print("]");
+    sensorFile.println(analogRead(A0));
+    sensorFile.close();
+  }
 }
 
 //print all SPIFFS files (debugging)
@@ -89,15 +125,95 @@ void handleFileRead() {
 
 //homepage
 void handleRoot() {
-  server.send(200, "text/html", "<h1>SPEARS Control Center</h1><h2></br><form action=\"/start\" method=\"POST\"><input type=\"submit\" value=\"Begin sensor logging\" style=\"font-size:20px\"></form></br><a href="+sensorOutputFileName+">Sensor Data Raw Text</a></h2>");
+  //long and annoying homepage code
+  server.send(200, "text/html", "<h1>SPEARS Control Center</h1><h3><br /><form action=\"/restart\" method=\"POST\"><input type=\"submit\" value=\"Restart controller\" style=\"font-size:20px\"></form><form action=\"/powerongopro\" method=\"POST\"><input type=\"submit\" value=\"Power on GoPro\" style=\"font-size:20px\"></form><form action=\"/fullsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin full sensor logging\" style=\"font-size:20px\"></form><form action=\"/stoplogging\" method=\"POST\"><input type=\"submit\" value=\"Stop logging\" style=\"font-size:20px\"></form><br /><a href="+sensorOutputFileName+">Sensor Data Raw Text</a></h3><h2><br /><br /><br /><br /><br /><br />Log</h2><p>"+webLog+"</p>");
+  
 }
 
-//called when buttton is pressed
-void startLogging() { 
-  //TO BE REPLACED                         
-  digitalWrite(led,!digitalRead(led)); 
+//called when full log button is pressed
+void startFullSensorLog() { 
+  if (startRecordingGoPro()) {
+   sensorLog(); 
+   sendHome();
+   return;
+  }
+  
+  webLog = webLog + "Cancelling operation <br />";
+  sendHome();
+}
 
-  sendHome();                        
+void sensorLog() { 
+  webLog = webLog + "Starting sensor logging <br />";
+  loggingSensors = true;
+}
+
+void stopLogging() {
+  webLog = webLog + "Stopping sensor logging <br />";
+  loggingSensors = false;
+  stopRecordingGoPro();
+  sendHome();
+}
+
+//send a wakeonlan signal to GoPro
+void powerOnGoPro() {
+  WiFiUDP UDP;
+  UDP.begin(9);
+  IPAddress goProIP(10, 5, 5, 9);
+  webLog = webLog + "Attempting to power on GoPro<br />";
+  WakeOnLan::sendWOL(goProIP, UDP, goProMac, sizeof goProMac);
+  sendHome();
+  return;
+}
+
+bool startRecordingGoPro() {
+  webLog = webLog + "Starting GoPro capture... ";
+  bool success = visitURL("/gp/gpControl/command/shutter?p=1");
+  webLog = webLog + (success? "now recording!<br />" : "failed; is GoPro WiFi on?<br />");
+  return success;
+}
+
+bool stopRecordingGoPro() {
+  webLog = webLog + "Stopping GoPro capture... ";
+  bool success = visitURL("/gp/gpControl/command/shutter?p=0");
+  webLog = webLog + (success? "GoPro successfully stopped!<br />" : "failed; is GoPro WiFi on?<br />");
+  return success;
+}
+
+//perform an HTTP GET request to gopro specific link
+bool visitURL(String url) {
+  //ip of GoPro
+  char* host = "10.5.5.9";
+  WiFiClient client;
+  
+  if (!client.connect(host, 8080)) {
+    Serial.println("connection failed");
+    return false;
+  }
+
+  Serial.print("Requesting URL: ");
+  Serial.println(url);
+
+  // This will send the request to the server
+  client.print(String("GET ") + url + " HTTP/1.1\r\n" +
+               "Host: " + host + "\r\n" + 
+               "Connection: close\r\n\r\n");
+  delay(10);
+
+  // Read all the lines of the reply from server and print them to Serial
+  Serial.println("Respond:");
+  while(client.available()){
+    String line = client.readStringUntil('\r');
+    Serial.print(line);
+  }
+
+  Serial.println();
+  Serial.println("closing connection");
+  return true;
+}
+
+void restart() {
+  sendHome();
+  ESP.restart();
 }
 
 //send browser back to homepage
