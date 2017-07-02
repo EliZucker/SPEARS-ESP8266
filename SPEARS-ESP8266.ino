@@ -23,6 +23,7 @@ IPAddress subnet(255,255,255,0);
 String webLog = "";
 
 bool loggingSensors = false;
+bool usingGoPro = false;
 
 ESP8266WebServer server(80); 
 
@@ -66,6 +67,7 @@ void setup() {
   server.on(("/"+ sensorOutputFileName).c_str (), handleFileRead);
   server.on("/", handleRoot);
   server.on("/fullsensorlog", HTTP_POST, startFullSensorLog);
+  server.on("/partialsensorlog", HTTP_POST, startPartialSensorLog);
   server.on("/restart", HTTP_POST, restart);
   server.on("/powerongopro", HTTP_POST, powerOnGoPro);
   server.on("/stoplogging", HTTP_POST, stopLogging);
@@ -79,6 +81,7 @@ void setup() {
 //this method is called repeatedly during operation
 void loop() {
   server.handleClient();
+  
 
   //write sensor data to file if enabled
   if(loggingSensors) {
@@ -126,12 +129,13 @@ void handleFileRead() {
 //homepage
 void handleRoot() {
   //long and annoying homepage code
-  server.send(200, "text/html", "<h1>SPEARS Control Center</h1><h3><br /><form action=\"/restart\" method=\"POST\"><input type=\"submit\" value=\"Restart controller\" style=\"font-size:20px\"></form><form action=\"/powerongopro\" method=\"POST\"><input type=\"submit\" value=\"Power on GoPro\" style=\"font-size:20px\"></form><form action=\"/fullsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin full sensor logging\" style=\"font-size:20px\"></form><form action=\"/stoplogging\" method=\"POST\"><input type=\"submit\" value=\"Stop logging\" style=\"font-size:20px\"></form><br /><a href="+sensorOutputFileName+">Sensor Data Raw Text</a></h3><h2><br /><br /><br /><br /><br /><br />Log</h2><p>"+webLog+"</p>");
+  server.send(200, "text/html", "<h1>SPEARS Control Center</h1><h3><br /><form action=\"/restart\" method=\"POST\"><input type=\"submit\" value=\"Restart controller\" style=\"font-size:20px\"></form><form action=\"/powerongopro\" method=\"POST\"><input type=\"submit\" value=\"Power on GoPro\" style=\"font-size:20px\"></form><form action=\"/fullsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin full sensor logging\" style=\"font-size:20px\"></form><form action=\"/partialsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin sensor logging without GoPro\" style=\"font-size:20px\"></form><form action=\"/stoplogging\" method=\"POST\"><input type=\"submit\" value=\"Stop logging\" style=\"font-size:20px\"></form><br /><a href="+sensorOutputFileName+">Sensor Data Raw Text</a></h3><h2><br /><br /><br /><br /><br /><br />Log</h2><p>"+webLog+"</p>");
   
 }
 
 //called when full log button is pressed
 void startFullSensorLog() { 
+  usingGoPro = true;
   if (startRecordingGoPro()) {
    sensorLog(); 
    sendHome();
@@ -142,6 +146,13 @@ void startFullSensorLog() {
   sendHome();
 }
 
+//called when partial log button is pressed
+void startPartialSensorLog() { 
+   usingGoPro = false;
+   sensorLog(); 
+   sendHome();
+}
+
 void sensorLog() { 
   webLog = webLog + "Starting sensor logging <br />";
   loggingSensors = true;
@@ -150,7 +161,9 @@ void sensorLog() {
 void stopLogging() {
   webLog = webLog + "Stopping sensor logging <br />";
   loggingSensors = false;
-  stopRecordingGoPro();
+  if(usingGoPro) {
+    stopRecordingGoPro();
+  }
   sendHome();
 }
 
