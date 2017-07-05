@@ -7,13 +7,18 @@
 #include <FS.h>
 #include <WiFiClient.h>
 
+//specify the output file here
 const String sensorOutputFileName = "sensorlog.txt";
+
+//time before sensor recording automatically stops (in microseconds)
+const float logTime = 10000000;
 
 const char WiFiName[] = "SPEARS";
 const char WiFiPass[] = "SPEARSPEARS";
 const char GoProName[] = "GoProSPEARS";
 const char GoProPass[] = "swim4693";
 byte goProMac[] = {0xF6, 0xDD, 0x9E, 0x90, 0xF7, 0xD5};
+
 //static wireless configuration
 //I hope this helps GoPro wifi inconsistency
 IPAddress ip(10,5,5,100);
@@ -22,6 +27,7 @@ IPAddress subnet(255,255,255,0);
 
 String webLog = "";
 
+//don't change these
 bool loggingSensors = false;
 bool usingGoPro = false;
 
@@ -38,7 +44,8 @@ void setup() {
   //connect GoPro
   WiFi.begin(GoProName, GoProPass);
   WiFi.config(ip, gateway, subnet);
-  
+
+  //attempt to connect to GoPro for 5 seconds
   int waitTime = 0;
   while ((WiFi.status() != WL_CONNECTED) && (waitTime < 10))
   {
@@ -46,6 +53,7 @@ void setup() {
     waitTime++;
     Serial.print(".");
   }
+
   WiFi.setAutoConnect(false);
   WiFi.setAutoReconnect(false);
 
@@ -58,10 +66,11 @@ void setup() {
   Serial.print("IP address: ");
   Serial.println(WiFi.softAPIP());
 
-  //initialize the file system
+  //initialize the file system and delete previous files
   SPIFFS.begin();
-  //SPIFFS.format();
+  SPIFFS.format();
   printFiles();
+  
 
   //server configuration
   server.on(("/"+ sensorOutputFileName).c_str (), handleFileRead);
@@ -70,7 +79,6 @@ void setup() {
   server.on("/partialsensorlog", HTTP_POST, startPartialSensorLog);
   server.on("/restart", HTTP_POST, restart);
   server.on("/powerongopro", HTTP_POST, powerOnGoPro);
-  server.on("/stoplogging", HTTP_POST, stopLogging);
   server.onNotFound([](){
     server.send(404, "text/plain", "404: Not found");
   });
@@ -81,15 +89,20 @@ void setup() {
 //this method is called repeatedly during operation
 void loop() {
   server.handleClient();
-  
 
   //write sensor data to file if enabled
   if(loggingSensors) {
     File sensorFile = SPIFFS.open(("/"+sensorOutputFileName), "a");
-    sensorFile.print("[");
-    sensorFile.print(millis());
-    sensorFile.print("]");
-    sensorFile.println(analogRead(A0));
+    long initTime = micros();
+    
+    //we get much more sensor data by suspending the server
+    while ((micros()-initTime) < logTime) {
+      sensorFile.print("[");
+      sensorFile.print(micros());
+      sensorFile.print("] ");
+      sensorFile.println(analogRead(A0));
+    }
+    stopLogging();
     sensorFile.close();
   }
 }
@@ -129,7 +142,7 @@ void handleFileRead() {
 //homepage
 void handleRoot() {
   //long and annoying homepage code
-  server.send(200, "text/html", "<h1>SPEARS Control Center</h1><h3><br /><form action=\"/restart\" method=\"POST\"><input type=\"submit\" value=\"Restart controller\" style=\"font-size:20px\"></form><form action=\"/powerongopro\" method=\"POST\"><input type=\"submit\" value=\"Power on GoPro\" style=\"font-size:20px\"></form><form action=\"/fullsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin full sensor logging\" style=\"font-size:20px\"></form><form action=\"/partialsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin sensor logging without GoPro\" style=\"font-size:20px\"></form><form action=\"/stoplogging\" method=\"POST\"><input type=\"submit\" value=\"Stop logging\" style=\"font-size:20px\"></form><br /><a href="+sensorOutputFileName+">Sensor Data Raw Text</a></h3><h2><br /><br /><br /><br /><br /><br />Log</h2><p>"+webLog+"</p>");
+  server.send(200, "text/html", "<h1>SPEARS Control Center</h1><h3><br /><form action=\"/restart\" method=\"POST\"><input type=\"submit\" value=\"Restart controller\" style=\"font-size:20px\"></form><form action=\"/powerongopro\" method=\"POST\"><input type=\"submit\" value=\"Power on GoPro\" style=\"font-size:20px\"></form><form action=\"/fullsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin full sensor logging\" style=\"font-size:20px\"></form><form action=\"/partialsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin sensor logging without GoPro\" style=\"font-size:20px\"></form><form action=\"/stoplogging\" method=\"POST\"><br /><a href="+sensorOutputFileName+">Sensor Data Raw Text</a><br /><br />GoPro links (must change WiFi to use): <a href=http://10.5.5.9:8080/videos/DCIM/>Media </a><a href=http://10.5.5.9:8080/gp/gpControl/command/shutter?p=1>Start </a><a href=http://10.5.5.9:8080/gp/gpControl/command/shutter?p=0>Stop</a></h3><h2><br /><br /><br /><br /><br /><br />Log</h2><p>"+webLog+"</p>");
   
 }
 
@@ -154,17 +167,16 @@ void startPartialSensorLog() {
 }
 
 void sensorLog() { 
-  webLog = webLog + "Starting sensor logging <br />";
+  webLog = webLog + "Starting sensor logging for "+logTime+" milliseconds<br />";
   loggingSensors = true;
 }
 
 void stopLogging() {
-  webLog = webLog + "Stopping sensor logging <br />";
+  webLog = webLog + "Automatically stopping sensor logging <br />";
   loggingSensors = false;
   if(usingGoPro) {
     stopRecordingGoPro();
   }
-  sendHome();
 }
 
 //send a wakeonlan signal to GoPro
