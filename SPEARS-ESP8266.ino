@@ -142,7 +142,7 @@ void handleFileRead() {
 //homepage
 void handleRoot() {
   //long and annoying homepage code
-  server.send(200, "text/html", "<h1>SPEARS Control Center</h1><h3><br /><form action=\"/restart\" method=\"POST\"><input type=\"submit\" value=\"Restart controller\" style=\"font-size:20px\"></form><form action=\"/powerongopro\" method=\"POST\"><input type=\"submit\" value=\"Power on GoPro\" style=\"font-size:20px\"></form><form action=\"/fullsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin full sensor logging\" style=\"font-size:20px\"></form><form action=\"/partialsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin sensor logging without GoPro\" style=\"font-size:20px\"></form><form action=\"/stoplogging\" method=\"POST\"><br /><a href="+sensorOutputFileName+">Sensor Data Raw Text</a><br /><br />GoPro links (must change WiFi to use): <a href=http://10.5.5.9:8080/videos/DCIM/>Media </a><a href=http://10.5.5.9:8080/gp/gpControl/command/shutter?p=1>Start </a><a href=http://10.5.5.9:8080/gp/gpControl/command/shutter?p=0>Stop</a></h3><h2><br /><br /><br /><br /><br /><br />Log</h2><p>"+webLog+"</p>");
+  server.send(200, "text/html", "<h1>SPEARS Control Center</h1><h3><br /><form action=\"/restart\" method=\"POST\"><input type=\"submit\" value=\"Restart controller\" style=\"font-size:20px\"></form><form action=\"/powerongopro\" method=\"POST\"><input type=\"submit\" value=\"Power on GoPro\" style=\"font-size:20px\"></form><form action=\"/fullsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin full sensor logging\" style=\"font-size:20px\"></form><form action=\"/partialsensorlog\" method=\"POST\"><input type=\"submit\" value=\"Begin sensor logging without GoPro\" style=\"font-size:20px\"></form><form action=\"/stoplogging\" method=\"POST\"><br /><a href="+sensorOutputFileName+">Sensor Data Raw Text</a><br /><br />GoPro links (must change WiFi to use): <a href=http://10.5.5.9:8080/videos/DCIM/>Media</a> <a href=http://10.5.5.9:8080/gp/gpControl/command/shutter?p=1>Start</a> <a href=http://10.5.5.9:8080/gp/gpControl/command/shutter?p=0>Stop</a></h3><h2><br /><br /><br /><br /><br /><br />Log</h2><p>"+webLog+"</p>");
   
 }
 
@@ -222,7 +222,7 @@ bool visitURL(String url) {
   client.print(String("GET ") + url + " HTTP/1.1\r\n" +
                "Host: " + host + "\r\n" + 
                "Connection: close\r\n\r\n");
-  delay(10);
+  delay(15);
 
   // Read all the lines of the reply from server and print them to Serial
   Serial.println("Respond:");
