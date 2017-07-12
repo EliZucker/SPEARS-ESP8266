@@ -28,6 +28,7 @@ IPAddress subnet(255,255,255,0);
 String webLog = "";
 
 //don't change these
+bool recorded = false;
 bool loggingSensors = false;
 bool usingGoPro = false;
 long lastGoProPowerOn;
@@ -115,7 +116,7 @@ void loop() {
   
   server.handleClient();
 
-  if(usingGoPro && (millis() - lastGoProPowerOn > 30000)) {
+  if(usingGoPro && (millis() - lastGoProPowerOn > 10000)) {
     powerOnGoPro();
   }
 }
@@ -194,7 +195,6 @@ void powerOnGoPro() {
   WiFiUDP UDP;
   UDP.begin(9);
   IPAddress goProIP(10, 5, 5, 9);
-  webLog = webLog + "Attempting to power on GoPro<br />";
   WakeOnLan::sendWOL(goProIP, UDP, goProMac, sizeof goProMac);
   sendHome();
 }
@@ -216,6 +216,7 @@ void wipeStorage() {
 
 bool startRecordingGoPro() {
   webLog = webLog + "Starting GoPro capture... ";
+  visitURL("/gp/gpControl/command/mode?p=0");
   bool success = visitURL("/gp/gpControl/command/shutter?p=1");
   webLog = webLog + (success? "now recording!<br />" : "failed; is GoPro WiFi on?<br />");
   return success;
