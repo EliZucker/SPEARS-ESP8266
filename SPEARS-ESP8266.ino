@@ -30,6 +30,7 @@ String webLog = "";
 //don't change these
 bool loggingSensors = false;
 bool usingGoPro = false;
+long lastGoProPowerOn;
 
 ESP8266WebServer server(80); 
 
@@ -58,7 +59,15 @@ void setup() {
   WiFi.setAutoReconnect(false);
 
   //output connection information
-  webLog = webLog + ((WiFi.status() == WL_CONNECTED) ? "Connected to GoPro! <br />": "GoPro connection failed... Turn on GoPro then restart<br />");
+  if(WiFi.status() == WL_CONNECTED) {
+    webLog = webLog + "Connected to GoPro! <br />";
+    Serial.println("Connected to GoPro");
+    usingGoPro = true;
+    lastGoProPowerOn = millis();
+  } else {
+    webLog = webLog + "GoPro connection failed... Turn on GoPro then restart<br />";
+    Serial.println("GoPro connection failed... Turn on GoPro then restart<br />");
+  }
   Serial.println();
   Serial.print("gopro IP address: ");
   Serial.println(WiFi.localIP());
@@ -88,8 +97,6 @@ void setup() {
 
 //this method is called repeatedly during operation
 void loop() {
-  server.handleClient();
-
   //write sensor data to file if enabled
   if(loggingSensors) {
     File sensorFile = SPIFFS.open(("/"+sensorOutputFileName), "a");
@@ -104,6 +111,12 @@ void loop() {
     }
     stopLogging();
     sensorFile.close();
+  }
+  
+  server.handleClient();
+
+  if(usingGoPro && (millis() - lastGoProPowerOn > 30000)) {
+    powerOnGoPro();
   }
 }
 
@@ -147,7 +160,6 @@ void handleRoot() {
 
 //called when full log button is pressed
 void startFullSensorLog() { 
-  usingGoPro = true;
   if (startRecordingGoPro()) {
    sensorLog(); 
    sendHome();
@@ -160,7 +172,6 @@ void startFullSensorLog() {
 
 //called when partial log button is pressed
 void startPartialSensorLog() { 
-   usingGoPro = false;
    sensorLog(); 
    sendHome();
 }
@@ -173,13 +184,13 @@ void sensorLog() {
 void stopLogging() {
   webLog = webLog + "Automatically stopping sensor logging <br />";
   loggingSensors = false;
-  if(usingGoPro) {
-    stopRecordingGoPro();
-  }
+  stopRecordingGoPro();
 }
 
 //send a wakeonlan signal to GoPro
 void powerOnGoPro() {
+  lastGoProPowerOn = millis();
+  
   WiFiUDP UDP;
   UDP.begin(9);
   IPAddress goProIP(10, 5, 5, 9);
@@ -191,8 +202,9 @@ void powerOnGoPro() {
 //disconnect from GoPro for download from PC
 void disconnectGoPro() {
   webLog = webLog + "Attempting to disconnect GoPro<br />";
+  powerOnGoPro();
   WiFi.disconnect();
-  sendHome();
+  usingGoPro = false;
 }
 
 //clear the logs
